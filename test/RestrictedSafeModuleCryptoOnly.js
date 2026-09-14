@@ -21,7 +21,7 @@ async function installAt({ ethers }, factoryName, address) {
 }
 
 async function deployedBtcFixture() {
-  const { ethers } = await network.create();
+  const { ethers } = await network.create("bscLocal");
   const [safe, delegate] = await ethers.getSigners();
   const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
   await factory.setPool(USDT, BTCB, 500, BTCB_USDT_POOL);
@@ -39,7 +39,7 @@ async function deployedBtcFixture() {
 
 describe("RestrictedSafeModuleCryptoOnly — límite de rutas", function () {
   it("rechaza una ruta bStock aunque el delegado use su pool conocido", async function () {
-    const { ethers } = await network.create();
+    const { ethers } = await network.create("bscLocal");
     const [safe, delegate] = await ethers.getSigners();
     const Module = await ethers.getContractFactory("RestrictedSafeModuleCryptoOnly");
     const module = await Module.deploy(safe.address, delegate.address, USDT, ROUTER);
@@ -77,7 +77,7 @@ describe("RestrictedSafeModuleCryptoOnly — límite de rutas", function () {
   });
 
   it("solicita a la Safe una aprobación exacta antes del swap", async function () {
-    const { ethers } = await network.create();
+    const { ethers } = await network.create("bscLocal");
     const [, delegate] = await ethers.getSigners();
     const Safe = await ethers.getContractFactory("MockSafe");
     const safe = await Safe.deploy();
@@ -86,6 +86,7 @@ describe("RestrictedSafeModuleCryptoOnly — límite de rutas", function () {
     const pool = await installAt({ ethers }, "MockV3Pool", BTCB_USDT_POOL);
     const btcFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_BTC_USD);
     const usdtFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_USDT_USD);
+    const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
     const now = (await ethers.provider.getBlock("latest")).timestamp;
     await pool.setObservation(0, 0, 1n);
     await btcFeed.setRoundData(100_000_000n, now);
@@ -107,13 +108,14 @@ describe("RestrictedSafeModuleCryptoOnly — límite de rutas", function () {
   });
 
   it("rechaza una ronda Chainlink incompleta", async function () {
-    const { ethers } = await network.create();
+    const { ethers } = await network.create("bscLocal");
     const [safe, delegate] = await ethers.getSigners();
     const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
     await factory.setPool(USDT, BTCB, 500, BTCB_USDT_POOL);
     const pool = await installAt({ ethers }, "MockV3Pool", BTCB_USDT_POOL);
     const btcFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_BTC_USD);
     const usdtFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_USDT_USD);
+    const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
     const now = (await ethers.provider.getBlock("latest")).timestamp;
     await pool.setObservation(0, 0, 1n);
     await btcFeed.setRoundDataWithRounds(100_000_000n, now, 2, 1);
@@ -125,13 +127,34 @@ describe("RestrictedSafeModuleCryptoOnly — límite de rutas", function () {
       .to.be.revertedWithCustomError(module, "IncompleteOracleRound");
   });
 
+  it("rechaza una ronda Chainlink con identificador cero", async function () {
+    const { ethers } = await network.create("bscLocal");
+    const [safe, delegate] = await ethers.getSigners();
+    const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
+    await factory.setPool(USDT, BTCB, 500, BTCB_USDT_POOL);
+    const pool = await installAt({ ethers }, "MockV3Pool", BTCB_USDT_POOL);
+    const btcFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_BTC_USD);
+    const usdtFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_USDT_USD);
+    const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await pool.setObservation(0, 0, 1n);
+    await btcFeed.setRoundDataWithRounds(100_000_000n, now, 0, 0);
+    await usdtFeed.setRoundData(100_000_000n, now);
+    const Module = await ethers.getContractFactory("RestrictedSafeModuleCryptoOnly");
+    const module = await Module.deploy(safe.address, delegate.address, USDT, ROUTER);
+
+    await expect(module.minimumAmountOutFromGuards(BTCB, BTCB_USDT_POOL, 500, 1n))
+      .to.be.revertedWithCustomError(module, "IncompleteOracleRound");
+  });
+
   it("rechaza un pool whitelistado si la factory no lo vincula a la ruta", async function () {
-    const { ethers } = await network.create();
+    const { ethers } = await network.create("bscLocal");
     const [safe, delegate] = await ethers.getSigners();
     const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
     const pool = await installAt({ ethers }, "MockV3Pool", BTCB_USDT_POOL);
     const btcFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_BTC_USD);
     const usdtFeed = await installAt({ ethers }, "MockAggregatorV3", CHAINLINK_USDT_USD);
+    const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
     const now = (await ethers.provider.getBlock("latest")).timestamp;
     await pool.setObservation(0, 0, 1n);
     await btcFeed.setRoundData(100_000_000n, now);

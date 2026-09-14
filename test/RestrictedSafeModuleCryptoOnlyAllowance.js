@@ -17,36 +17,31 @@ async function installAt({ ethers }, name, address) {
   return Factory.attach(address);
 }
 
-describe("RestrictedSafeModuleCryptoOnly — reentrada", function () {
-  it("rechaza una ejecución anidada durante la llamada Safe", async function () {
+describe("RestrictedSafeModuleCryptoOnly — allowance residual", function () {
+  it("rechaza una Safe con allowance USDT residual hacia el router", async function () {
     const { ethers } = await network.create("bscLocal");
     const [, delegate] = await ethers.getSigners();
-    const safe = await (await ethers.getContractFactory("MockReentrantSafe")).deploy();
+    const safe = await (await ethers.getContractFactory("MockSafe")).deploy();
     const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
     const pool = await installAt({ ethers }, "MockV3Pool", POOL);
     const btc = await installAt({ ethers }, "MockAggregatorV3", BTC_USD);
-    const usdt = await installAt({ ethers }, "MockAggregatorV3", USDT_USD);
+    const usdtFeed = await installAt({ ethers }, "MockAggregatorV3", USDT_USD);
     const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
     const now = (await ethers.provider.getBlock("latest")).timestamp;
     await factory.setPool(USDT, BTCB, 500, POOL);
     await pool.setObservation(0, 0, 1n);
     await btc.setRoundData(100_000_000n, now);
-    await usdt.setRoundData(100_000_000n, now);
+    await usdtFeed.setRoundData(100_000_000n, now);
     const module = await (await ethers.getContractFactory("RestrictedSafeModuleCryptoOnly"))
       .deploy(await safe.getAddress(), delegate.address, USDT, ROUTER);
     await safe.setModule(await module.getAddress());
+    await token.setAllowance(await safe.getAddress(), ROUTER, 1n);
     const amountIn = 1n * 10n ** 18n;
     const minimum = await module.minimumAmountOutFromGuards(BTCB, POOL, 500, amountIn);
-    const deadline = now + 60;
-    const nested = module.interface.encodeFunctionData("executeExactInputSingle", [BTCB, POOL, 500, amountIn, minimum, deadline]);
-    await safe.setReentryData(nested);
 
-    await module.connect(delegate).executeExactInputSingle(BTCB, POOL, 500, amountIn, minimum, deadline);
-    expect(await safe.reentryAttempted()).to.equal(true);
-    expect(await safe.reentrySucceeded()).to.equal(false);
-    const selector = (await safe.reentryResult()).slice(0, 10);
-    expect(selector).to.equal(module.interface.getError("ReentrantExecution").selector);
-    expect(await module.totalStrategySpent()).to.equal(amountIn);
-    expect(await safe.executionCount()).to.equal(2n);
+    await expect(module.connect(delegate).executeExactInputSingle(BTCB, POOL, 500, amountIn, minimum, now + 60))
+      .to.be.revertedWithCustomError(module, "UnexpectedRouterAllowance");
+    expect(await safe.executionCount()).to.equal(0n);
+    expect(await module.totalStrategySpent()).to.equal(0n);
   });
 });

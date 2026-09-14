@@ -34,6 +34,7 @@ interface ICryptoOnlySafe {
 
 interface ICryptoOnlyErc20 {
     function approve(address spender, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
 }
 
 interface ICryptoOnlyFactory {
@@ -43,6 +44,7 @@ interface ICryptoOnlyFactory {
 /// @notice Candidate restricted Safe module for BTCB/ETH only. Not deployed or enabled.
 contract RestrictedSafeModuleCryptoOnly {
     error ZeroAddress();
+    error UnsupportedChain();
     error UnsupportedRouter();
     error UnsupportedInputToken();
     error DelegateMustBeEOA();
@@ -62,6 +64,7 @@ contract RestrictedSafeModuleCryptoOnly {
     error ExpiredDeadline();
     error DeadlineTooFar();
     error SafeExecutionFailed();
+    error UnexpectedRouterAllowance(uint256 existingAllowance);
     error CumulativeLimitExceeded();
     error ReentrantExecution();
     error FactoryPoolMismatch();
@@ -94,6 +97,7 @@ contract RestrictedSafeModuleCryptoOnly {
     uint256 private executionLock;
 
     constructor(address safe_, address delegate_, address usdt_, address router_) {
+        if (block.chainid != 56) revert UnsupportedChain();
         if (safe_ == address(0) || delegate_ == address(0) || usdt_ == address(0) || router_ == address(0)) revert ZeroAddress();
         if (router_ != PANCAKESWAP_V3_ROUTER) revert UnsupportedRouter();
         if (usdt_ != CANONICAL_USDT) revert UnsupportedInputToken();
@@ -105,8 +109,7 @@ contract RestrictedSafeModuleCryptoOnly {
     }
 
     function validateMinimumOut(address tokenOut, address pool, uint24 fee, uint256 amountIn, uint256 minAmountOut) external view {
-        if (msg.sender != delegate) revert UnauthorizedDelegate();
-        if (delegate.code.length != 0) revert DelegateNoLongerEOA();
+        _validateDelegate();
         _validateRoute(tokenOut, pool, fee);
         if (minAmountOut < _minimumAmountOutFromGuards(tokenOut, pool, amountIn)) revert MinAmountOutBelowGuardedLimit();
     }
@@ -136,6 +139,8 @@ contract RestrictedSafeModuleCryptoOnly {
         _validateDelegate();
         bytes memory swapData = _buildExactInputSingle(tokenOut, pool, fee, amountIn, minAmountOut, deadline);
         if (totalStrategySpent + amountIn > MAX_TOTAL_STRATEGY_USDT) revert CumulativeLimitExceeded();
+        uint256 existingAllowance = ICryptoOnlyErc20(usdt).allowance(safe, router);
+        if (existingAllowance != 0) revert UnexpectedRouterAllowance(existingAllowance);
         bytes memory approvalData = abi.encodeWithSelector(ICryptoOnlyErc20.approve.selector, router, amountIn);
         if (!ICryptoOnlySafe(safe).execTransactionFromModule(usdt, 0, approvalData, 0)) revert SafeExecutionFailed();
         if (!ICryptoOnlySafe(safe).execTransactionFromModule(router, 0, swapData, 0)) revert SafeExecutionFailed();
@@ -145,7 +150,7 @@ contract RestrictedSafeModuleCryptoOnly {
 
     function _validateDelegate() internal view {
         if (msg.sender != delegate) revert UnauthorizedDelegate();
-        if (delegate.code.length != 0) revert DelegateNoLongerEOA();
+        if (msg.sender != tx.origin || delegate.code.length != 0) revert DelegateNoLongerEOA();
     }
 
     function _buildExactInputSingle(
@@ -202,7 +207,7 @@ contract RestrictedSafeModuleCryptoOnly {
     function _readOraclePrice(address feed) internal view returns (uint256) {
         if (ICryptoOnlyAggregator(feed).decimals() != ORACLE_DECIMALS) revert UnexpectedOracleDecimals();
         (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = ICryptoOnlyAggregator(feed).latestRoundData();
-        if (answeredInRound < roundId) revert IncompleteOracleRound();
+        if (roundId == 0 || answeredInRound < roundId) revert IncompleteOracleRound();
         if (answer <= 0 || updatedAt == 0 || updatedAt > block.timestamp) revert InvalidOraclePrice();
         if (block.timestamp - updatedAt > MAX_ORACLE_AGE) revert StaleOraclePrice();
         return uint256(answer);

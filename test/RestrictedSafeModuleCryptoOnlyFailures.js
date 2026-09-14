@@ -18,13 +18,14 @@ async function installAt({ ethers }, contractName, address) {
 }
 
 async function fixture(failAt) {
-  const { ethers } = await network.create();
+  const { ethers } = await network.create("bscLocal");
   const [, delegate] = await ethers.getSigners();
   const safe = await (await ethers.getContractFactory("MockSafe")).deploy();
   const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
   const pool = await installAt({ ethers }, "MockV3Pool", BTCB_USDT_POOL);
   const btc = await installAt({ ethers }, "MockAggregatorV3", BTC_USD);
   const usdt = await installAt({ ethers }, "MockAggregatorV3", USDT_USD);
+  const token = await installAt({ ethers }, "MockErc20Allowance", USDT);
   const now = (await ethers.provider.getBlock("latest")).timestamp;
   await factory.setPool(USDT, BTCB, 500, BTCB_USDT_POOL);
   await pool.setObservation(0, 0, 1n);

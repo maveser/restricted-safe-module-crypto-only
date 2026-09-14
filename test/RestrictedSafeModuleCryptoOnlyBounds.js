@@ -18,7 +18,7 @@ async function installAt({ ethers }, name, address) {
 }
 
 async function fixture() {
-  const { ethers } = await network.create();
+  const { ethers } = await network.create("bscLocal");
   const [safe, delegate] = await ethers.getSigners();
   const factory = await installAt({ ethers }, "MockPancakeV3Factory", FACTORY);
   const pool = await installAt({ ethers }, "MockV3Pool", POOL);
