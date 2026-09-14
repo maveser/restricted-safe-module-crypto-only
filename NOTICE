@@ -1,0 +1,12 @@
+Restricted Safe Module — BTCB/ETH candidate (BNB Smart Chain)
+Copyright (C) 2026 Sergio and contributors
+
+This source release is licensed under the GNU General Public License, version 2 or (at your option) any later version. See LICENSE.
+
+Third-party notices
+-------------------
+The files contracts/libraries/FullMath.sol and contracts/libraries/TickMath.sol are adapted from PancakeSwap V3 core mathematics. Their source headers retain the original SPDX identifier GPL-2.0-or-later. This release distributes the candidate as a whole under GPL-2.0-or-later to comply with that provenance.
+
+No warranty
+-----------
+This is an unaudited candidate module. It is not deployed, enabled, funded, or approved for live trading. The authors provide it without warranty; use at your own risk.
